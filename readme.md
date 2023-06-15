@@ -1,4 +1,15 @@
 # 退室人数を数えることによるサウナ内滞在時間推定
+
+## 環境構築
+```bash
+pip install -r requirements.txt
+```
+
+## 実行方法
+```bash
+python sauna_simulation.py
+```
+
 ## 理論
 ### 仮定
 統計学的に解析可能な問題とするために、以下の仮定をおく。
