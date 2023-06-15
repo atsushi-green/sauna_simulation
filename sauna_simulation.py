@@ -21,13 +21,13 @@ random.seed(seed)
 # ======定数======
 MAX_SIMULATION_MINUTES = 10000  # シミュレーションを終了する時間(分)
 MAX_SIMULATION_SECONDS = MAX_SIMULATION_MINUTES * 60
-LAMBDA = 2  # 1分当たりの平均入室者数(実際は観測不可能だが、このシミュレーションでは既知とする)
+LAMBDA = 2  # 1分当たりの平均入室者数(観測不可能だが、神のみぞ知るパラメータが決まっている状況を想定している)
 ASSUMED_MU = 8  # 他のサウナー達が滞在する時間の平均値[分]
 N = LAMBDA * ASSUMED_MU  # 定常状態におけるサウナ室内人数の期待値(自分が入室した時の滞在人数はNになると仮定)
 
 # 初心者:5分で退室する
-# 中級者8分で退室する
-# 上級者10、12分で退室する
+# 中級者:8分で退室する
+# 上級者:10、12分で退室する
 # 初心者20%、中級者60%、上級者20%とする。
 MU_DISTRIBUTION = [5, 5, 8, 8, 8, 8, 8, 8, 10, 12]
 assert np.average(MU_DISTRIBUTION) == ASSUMED_MU  # μの平均が合っていることを確認
@@ -50,7 +50,7 @@ def main():
 
     # ■ step1-1. 自分以外の人の動きを(入退室)をシミュレーション
     for el_sec in range(MAX_SIMULATION_SECONDS):
-        # 1週1秒のforループシミュレーション
+        # 1周1秒のforループシミュレーション
         if judge_enter_sauna_with_poisson(LAMBDA):  # ポアソン分布でこの1秒間に入室があったかどうか判定
             enter_count_list[el_sec] += 1
             # 今入った人の滞在時間は、パラメータmuの指数分布に従う
@@ -82,7 +82,7 @@ def main():
     draw_histgram(
         exit_count_list_minute, theory_dist, theory_ave=LAMBDA, theory_var=LAMBDA, savename="02.1分あたりの退室人数の分布.png"
     )
-    # サウナ室内の定常状態を確認(サウナ開店後から何分程度経てば定常上たになるかも確認できる)
+    # サウナ室内の定常状態を確認(サウナ開店後から何分程度経てば定常状態になるかも確認できる)
     # [0:h*3600:60]: 初めからh時間後までを1分間隔で
     draw_in_sauna_people(num_in_sauna_list[0 : 4 * 3600 : 60], N, savename="03.サウナ室内滞在人数の変遷_4時間.png")
     draw_in_sauna_people(num_in_sauna_list[0 : 24 * 3600 : 60], N, savename="03.サウナ室内滞在人数の変遷_24時間.png")
@@ -99,14 +99,14 @@ def main():
             # n = N  # こっちは自分が入室する時は必ず定常状態の期待値の人数がサウナに滞在していると仮定
 
             # ガンマ分布のパラメータαを計算し、α人退室するまでに経過する時間(my_stay_sec)を計算する
-            if COUNT_ENTER_EXIT_FLG:
+            if COUNT_ENTER_EXIT_FLG:  # 入室人数も数える場合
                 alpha = 2 * tau * n / ASSUMED_MU
                 my_stay_sec = calc_my_stay_sec(el_sec, alpha, exit_count_list, enter_count_list)
-            else:
+            else:  # 退室人数のみを数える場合
                 alpha = tau * n / ASSUMED_MU
                 my_stay_sec = calc_my_stay_sec(el_sec, alpha, exit_count_list)
 
-            # もし自分がサウナに入ってから退室するまでにα人数え終わらなかったら、実験結果から除く
+            # もし自分がサウナに入ってから退室するまでにα人数え終わらなかったら、実験結果から除く(appendしない)
             if my_stay_sec >= 0:
                 result_dict[tau].append(my_stay_sec // 60)
 
@@ -120,11 +120,13 @@ def main():
             beta_theory = 1 / LAMBDA
         alpha_theory = tau / beta_theory
 
+        # ガンマ分布の期待値と分散を計算(E[X]=αβ, V[X]=αβ^2)
+        theory_ave = alpha_theory * beta_theory
+        theory_var = alpha_theory * beta_theory**2
+
         # 自分が待ちたい時間がtauの時のシミュレーション結果を取り出す
         res = result_dict[tau]
         # res = res[len(res) // 10 :]  # 前半10%は定常状態ではない可能性があるので除く
-        theory_ave = alpha_theory * beta_theory
-        theory_var = alpha_theory * beta_theory**2
 
         print(f"=====自分がtau={tau}分滞在したいときの実際の滞在時間=====")
         print(f"ガンマ分布理論値: 平均={theory_ave:.3f}, 分散={theory_var:.3f}")
@@ -133,6 +135,7 @@ def main():
         # ガンマ分布の理論値を作成
         x_list = range(np.max(res))
         theory_dist = gamma.pdf(x=x_list, a=alpha_theory, scale=beta_theory)
+
         draw_histgram(
             res,
             theory_dist,
@@ -177,8 +180,7 @@ def round_sec2min(lis_sec: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: 1分単位の結果
     """
-    lis_min = [sum(lis_sec[s * 60 : (s + 1) * 60]) for s in range(len(lis_sec) // 60 - 1)]
-    return lis_min
+    return [sum(lis_sec[s * 60 : (s + 1) * 60]) for s in range(len(lis_sec) // 60 - 1)]
 
 
 def calc_my_stay_sec(en_sec: int, alpha: float, exit_counts: np.ndarray, enter_counts: np.ndarray = None) -> int:
@@ -191,11 +193,11 @@ def calc_my_stay_sec(en_sec: int, alpha: float, exit_counts: np.ndarray, enter_c
         enter_counts (np.ndarray, optional): 1秒ごとの入室人数. Defaults to None.
 
     Returns:
-        int: alpha人数えるまで自分が滞在した時間(秒)
+        int: alpha人数えるまで自分が滞在した時間(秒) ただしalpha人数えきれずにシミュレーションが終了したら-1を返す
     """
     my_count = 0  # 自分がサウナに入ってから数えた(退室)人数
     my_stay_sec = 0  # 自分がサウナに入ってから経過した時間(秒)
-    # HACK: 以下のwhileループは累積和を用いて高速化できるが、ソースコードの直感的理解を優先してこのままにしている
+    # HACK: 以下のwhileループは累積和と二分探索を用いて高速化できるが、ソースコードの直感的理解を優先してこのままにしている
     while en_sec + my_stay_sec < MAX_SIMULATION_SECONDS:
         my_count += exit_counts[en_sec + my_stay_sec]  # 1秒間の退室人数を数える
         if enter_counts is not None:
